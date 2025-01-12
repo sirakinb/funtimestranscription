@@ -1,0 +1,23 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  @apply bg-dark-300 text-gray-100 min-h-screen;
+}
+
+.drop-zone {
+  @apply border-2 border-dashed border-gray-600 rounded-lg p-8 text-center cursor-pointer transition-all hover:border-primary;
+}
+
+.btn-primary {
+  @apply bg-primary hover:bg-secondary text-white font-semibold py-2 px-4 rounded-lg transition-colors;
+}
+
+.transcript-container {
+  @apply bg-dark-200 rounded-lg p-6 mt-6;
+}
