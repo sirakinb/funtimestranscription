@@ -1,4 +1,4 @@
-# Audio Transcription Tool
+# FunTimes Transcription
 
 A modern web application for transcribing audio files with speaker diarization using AssemblyAI's API. The tool features a sleek dark-themed UI and supports MP3 and M4A audio files.
 
