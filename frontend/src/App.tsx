@@ -2,6 +2,8 @@ import { useState, useCallback } from 'react'
 import { useDropzone } from 'react-dropzone'
 import { ArrowUpTrayIcon, DocumentTextIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline'
 
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+
 interface Utterance {
   speaker: string
   text: string
@@ -34,7 +36,7 @@ function App() {
     formData.append('file', file)
 
     try {
-      const response = await fetch('http://localhost:8000/upload', {
+      const response = await fetch(`${API_URL}/upload`, {
         method: 'POST',
         body: formData,
       })
@@ -100,7 +102,7 @@ function App() {
     }
 
     try {
-      const response = await fetch('http://localhost:8000/save-transcript', {
+      const response = await fetch(`${API_URL}/save-transcript`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
