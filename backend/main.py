@@ -11,14 +11,18 @@ app = FastAPI()
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],  # React dev server
+    allow_origins=[
+        "http://localhost:5173",  # Local development
+        "https://funtimestranscription.vercel.app",  # Vercel production
+        "https://funtimestranscription-git-main-sirakinb.vercel.app",  # Vercel preview
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # Configure AssemblyAI
-aai.settings.api_key = "45fcdb83f3a143bd988d4ffc4f3e9655"
+aai.settings.api_key = os.getenv("ASSEMBLYAI_API_KEY", "45fcdb83f3a143bd988d4ffc4f3e9655")
 
 # Make.com webhook URL
 MAKE_WEBHOOK_URL = "https://hook.us1.make.com/qppd33dn2791jjpv0spo2xbq6brvnnn4"
