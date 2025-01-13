@@ -71,8 +71,21 @@ async def upload_file(file: UploadFile):
 @app.post("/save-transcript")
 async def save_transcript(transcript: dict):
     try:
+        # Create formatted transcript with speaker labels
+        formatted_transcript = "\n\n".join([
+            f"[{utterance['speaker']}]: {utterance['text']}"
+            for utterance in transcript['utterances']
+        ])
+
+        # Add formatted transcript to the payload
+        webhook_payload = {
+            "text": transcript['text'],  # Original full transcript
+            "formatted_transcript": formatted_transcript,  # New formatted version with speaker labels
+            "utterances": transcript['utterances']  # Original utterances array
+        }
+
         # Send the transcript to Make.com webhook
-        response = requests.post(MAKE_WEBHOOK_URL, json=transcript)
+        response = requests.post(MAKE_WEBHOOK_URL, json=webhook_payload)
         response.raise_for_status()
         return JSONResponse({"message": "Transcript saved successfully"})
     except Exception as e:
