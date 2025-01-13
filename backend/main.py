@@ -4,6 +4,7 @@ from fastapi.responses import JSONResponse
 import assemblyai as aai
 import asyncio
 import os
+import requests
 
 app = FastAPI()
 
@@ -18,6 +19,9 @@ app.add_middleware(
 
 # Configure AssemblyAI
 aai.settings.api_key = "45fcdb83f3a143bd988d4ffc4f3e9655"
+
+# Make.com webhook URL
+MAKE_WEBHOOK_URL = "https://hook.us1.make.com/qppd33dn2791jjpv0spo2xbq6brvnnn4"
 
 @app.post("/upload")
 async def upload_file(file: UploadFile):
@@ -61,6 +65,16 @@ async def upload_file(file: UploadFile):
             "utterances": utterances
         })
 
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/save-transcript")
+async def save_transcript(transcript: dict):
+    try:
+        # Send the transcript to Make.com webhook
+        response = requests.post(MAKE_WEBHOOK_URL, json=transcript)
+        response.raise_for_status()
+        return JSONResponse({"message": "Transcript saved successfully"})
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
