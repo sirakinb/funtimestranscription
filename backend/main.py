@@ -5,6 +5,11 @@ import assemblyai as aai
 import asyncio
 import os
 import requests
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
@@ -13,6 +18,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:5173",  # Local development
+        "http://127.0.0.1:5173",  # Local development alternative
         "https://funtimestranscription.vercel.app",  # Vercel production
         "https://funtimestranscription-git-main-sirakinb.vercel.app",  # Vercel preview
     ],
@@ -22,37 +28,51 @@ app.add_middleware(
 )
 
 # Configure AssemblyAI
-aai.settings.api_key = os.getenv("ASSEMBLYAI_API_KEY", "45fcdb83f3a143bd988d4ffc4f3e9655")
+aai.settings.api_key = os.getenv("ASSEMBLYAI_API_KEY", "52c880bb9c4e4797b6342fbc9e03146e")
+logger.info(f"AssemblyAI API Key configured: {aai.settings.api_key[:8]}...")
 
 # Make.com webhook URL
-MAKE_WEBHOOK_URL = "https://hook.us1.make.com/qppd33dn2791jjpv0spo2xbq6brvnnn4"
+MAKE_WEBHOOK_URL = "https://hook.us2.make.com/nuz92po16a43gj0wkxsgspqglrhjktkk"
+
+@app.get("/test")
+async def test():
+    """Test endpoint to verify API is working"""
+    return {"status": "ok", "api_key_configured": bool(aai.settings.api_key)}
 
 @app.post("/upload")
 async def upload_file(file: UploadFile):
     try:
+        logger.info(f"Received file: {file.filename}")
+        
         # Save the uploaded file temporarily
         file_path = f"temp_{file.filename}"
         with open(file_path, "wb") as buffer:
             content = await file.read()
             buffer.write(content)
+        logger.info(f"File saved temporarily as: {file_path}")
 
         # Create a transcription config
         config = aai.TranscriptionConfig(
             speaker_labels=True,
             speakers_expected=2
         )
+        logger.info("Transcription config created")
 
         # Create the transcriber
         transcriber = aai.Transcriber()
+        logger.info("Transcriber created")
 
         # Start the transcription
+        logger.info("Starting transcription...")
         transcript = transcriber.transcribe(
             file_path,
             config=config
         )
+        logger.info("Transcription completed")
 
         # Clean up the temporary file
         os.remove(file_path)
+        logger.info("Temporary file cleaned up")
 
         # Format the response
         utterances = []
@@ -63,6 +83,7 @@ async def upload_file(file: UploadFile):
                 "start": utterance.start,
                 "end": utterance.end
             })
+        logger.info(f"Processed {len(utterances)} utterances")
 
         return JSONResponse({
             "text": transcript.text,
@@ -70,6 +91,7 @@ async def upload_file(file: UploadFile):
         })
 
     except Exception as e:
+        logger.error(f"Error during transcription: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/save-transcript")
