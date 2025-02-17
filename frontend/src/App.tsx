@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react'
 import { useDropzone } from 'react-dropzone'
-import { ArrowUpTrayIcon, DocumentTextIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline'
+import { ArrowUpTrayIcon, DocumentTextIcon, ArrowDownTrayIcon, PencilIcon, CheckIcon } from '@heroicons/react/24/outline'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
@@ -25,6 +25,8 @@ function App() {
   const [transcription, setTranscription] = useState<TranscriptionResult | null>(null)
   const [speakerNames, setSpeakerNames] = useState<SpeakerNames>({})
   const [isSaving, setIsSaving] = useState(false)
+  const [editingIndex, setEditingIndex] = useState<number | null>(null)
+  const [editedUtterances, setEditedUtterances] = useState<{ [key: number]: string }>({})
 
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
     const file = acceptedFiles[0]
@@ -68,7 +70,7 @@ function App() {
     if (!transcription) return
 
     const text = transcription.utterances
-      .map(u => `[${speakerNames[u.speaker] || u.speaker}]: ${u.text}`)
+      .map((u, index) => `[${speakerNames[u.speaker] || u.speaker}]: ${editedUtterances[index] || u.text}`)
       .join('\n\n')
     
     const blob = new Blob([text], { type: 'text/plain' })
@@ -95,9 +97,10 @@ function App() {
 
     const formattedTranscript = {
       text: transcription.text,
-      utterances: transcription.utterances.map(u => ({
+      utterances: transcription.utterances.map((u, index) => ({
         ...u,
-        speaker: speakerNames[u.speaker] || u.speaker
+        speaker: speakerNames[u.speaker] || u.speaker,
+        text: editedUtterances[index] || u.text
       }))
     }
 
@@ -121,6 +124,13 @@ function App() {
     } finally {
       setIsSaving(false)
     }
+  }
+
+  const handleEditText = (index: number, text: string) => {
+    setEditedUtterances(prev => ({
+      ...prev,
+      [index]: text
+    }))
   }
 
   const uniqueSpeakers = transcription 
@@ -201,10 +211,30 @@ function App() {
                   key={index}
                   className="p-4 rounded-lg bg-dark-100"
                 >
-                  <div className="font-semibold text-primary mb-1">
-                    {speakerNames[utterance.speaker] || utterance.speaker}
+                  <div className="flex justify-between items-start mb-2">
+                    <div className="font-semibold text-primary">
+                      {speakerNames[utterance.speaker] || utterance.speaker}
+                    </div>
+                    <button
+                      onClick={() => editingIndex === index ? setEditingIndex(null) : setEditingIndex(index)}
+                      className="p-1 hover:bg-dark-200 rounded-full transition-colors"
+                    >
+                      {editingIndex === index ? (
+                        <CheckIcon className="w-5 h-5 text-green-500" />
+                      ) : (
+                        <PencilIcon className="w-5 h-5 text-gray-400" />
+                      )}
+                    </button>
                   </div>
-                  <div>{utterance.text}</div>
+                  {editingIndex === index ? (
+                    <textarea
+                      value={editedUtterances[index] || utterance.text}
+                      onChange={(e) => handleEditText(index, e.target.value)}
+                      className="w-full px-3 py-2 rounded bg-dark-200 border border-gray-600 focus:border-primary focus:outline-none min-h-[100px]"
+                    />
+                  ) : (
+                    <div>{editedUtterances[index] || utterance.text}</div>
+                  )}
                 </div>
               ))}
             </div>
