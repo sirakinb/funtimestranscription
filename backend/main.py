@@ -8,6 +8,7 @@ import requests
 import logging
 from typing import Optional
 import time
+import tempfile
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -33,6 +34,10 @@ app.add_middleware(
 aai.settings.api_key = os.getenv("ASSEMBLYAI_API_KEY", "52c880bb9c4e4797b6342fbc9e03146e")
 logger.info(f"AssemblyAI API Key configured: {aai.settings.api_key[:8]}...")
 
+# Initialize transcriber at startup
+transcriber = aai.Transcriber()
+logger.info("Transcriber initialized at startup")
+
 # Make.com webhook URL
 MAKE_WEBHOOK_URL = "https://hook.us2.make.com/nuz92po16a43gj0wkxsgspqglrhjktkk"
 
@@ -48,19 +53,21 @@ async def test():
 
 def transcribe_with_retry(file_path: str, config: aai.TranscriptionConfig) -> Optional[aai.Transcript]:
     """Attempt transcription with retries"""
+    last_error = None
     for attempt in range(MAX_RETRIES):
         try:
-            transcriber = aai.Transcriber()
             return transcriber.transcribe(file_path, config=config)
         except Exception as e:
+            last_error = e
             if attempt == MAX_RETRIES - 1:  # Last attempt
-                raise  # Re-raise the last exception
+                logger.error(f"All transcription attempts failed. Last error: {str(e)}")
+                raise last_error
             logger.warning(f"Transcription attempt {attempt + 1} failed: {str(e)}")
-            time.sleep(RETRY_DELAY)  # Wait before retrying
+            time.sleep(RETRY_DELAY)
 
 @app.post("/upload")
 async def upload_file(file: UploadFile):
-    file_path = None
+    temp_file = None
     try:
         logger.info(f"Received file: {file.filename}")
         
@@ -74,51 +81,52 @@ async def upload_file(file: UploadFile):
                 detail=f"File too large. Maximum size is {MAX_FILE_SIZE/1024/1024}MB"
             )
         
-        # Save the uploaded file temporarily
-        file_path = f"temp_{file.filename}"
-        with open(file_path, "wb") as buffer:
-            buffer.write(content)
-        logger.info(f"File saved temporarily as: {file_path}")
+        # Create a temporary file using tempfile module
+        temp_fd, temp_path = tempfile.mkstemp(suffix=os.path.splitext(file.filename)[1])
+        try:
+            with os.fdopen(temp_fd, 'wb') as temp_file:
+                temp_file.write(content)
+            logger.info(f"File saved temporarily as: {temp_path}")
 
-        # Create a transcription config
-        config = aai.TranscriptionConfig(
-            speaker_labels=True,
-            speakers_expected=2
-        )
-        logger.info("Transcription config created")
+            # Create a transcription config
+            config = aai.TranscriptionConfig(
+                speaker_labels=True,
+                speakers_expected=2
+            )
+            logger.info("Transcription config created")
 
-        # Start the transcription with retry logic
-        logger.info("Starting transcription...")
-        transcript = transcribe_with_retry(file_path, config)
-        logger.info("Transcription completed")
+            # Start the transcription with retry logic
+            logger.info("Starting transcription...")
+            transcript = transcribe_with_retry(temp_path, config)
+            logger.info("Transcription completed")
 
-        # Format the response
-        utterances = []
-        for utterance in transcript.utterances:
-            utterances.append({
-                "speaker": utterance.speaker,
-                "text": utterance.text,
-                "start": utterance.start,
-                "end": utterance.end
+            # Format the response
+            utterances = []
+            for utterance in transcript.utterances:
+                utterances.append({
+                    "speaker": utterance.speaker,
+                    "text": utterance.text,
+                    "start": utterance.start,
+                    "end": utterance.end
+                })
+            logger.info(f"Processed {len(utterances)} utterances")
+
+            return JSONResponse({
+                "text": transcript.text,
+                "utterances": utterances
             })
-        logger.info(f"Processed {len(utterances)} utterances")
 
-        return JSONResponse({
-            "text": transcript.text,
-            "utterances": utterances
-        })
+        finally:
+            # Clean up the temporary file
+            try:
+                os.unlink(temp_path)
+                logger.info("Temporary file cleaned up")
+            except Exception as e:
+                logger.error(f"Error cleaning up temporary file: {str(e)}")
 
     except Exception as e:
         logger.error(f"Error during transcription: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        # Clean up the temporary file in the finally block
-        if file_path and os.path.exists(file_path):
-            try:
-                os.remove(file_path)
-                logger.info("Temporary file cleaned up")
-            except Exception as e:
-                logger.error(f"Error cleaning up temporary file: {str(e)}")
 
 @app.post("/save-transcript")
 async def save_transcript(transcript: dict):
