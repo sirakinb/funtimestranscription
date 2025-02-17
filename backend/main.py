@@ -6,6 +6,8 @@ import asyncio
 import os
 import requests
 import logging
+from typing import Optional
+import time
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -34,20 +36,47 @@ logger.info(f"AssemblyAI API Key configured: {aai.settings.api_key[:8]}...")
 # Make.com webhook URL
 MAKE_WEBHOOK_URL = "https://hook.us2.make.com/nuz92po16a43gj0wkxsgspqglrhjktkk"
 
+# Constants
+MAX_FILE_SIZE = 1024 * 1024 * 100  # 100MB
+MAX_RETRIES = 3
+RETRY_DELAY = 2  # seconds
+
 @app.get("/test")
 async def test():
     """Test endpoint to verify API is working"""
     return {"status": "ok", "api_key_configured": bool(aai.settings.api_key)}
 
+def transcribe_with_retry(file_path: str, config: aai.TranscriptionConfig) -> Optional[aai.Transcript]:
+    """Attempt transcription with retries"""
+    for attempt in range(MAX_RETRIES):
+        try:
+            transcriber = aai.Transcriber()
+            return transcriber.transcribe(file_path, config=config)
+        except Exception as e:
+            if attempt == MAX_RETRIES - 1:  # Last attempt
+                raise  # Re-raise the last exception
+            logger.warning(f"Transcription attempt {attempt + 1} failed: {str(e)}")
+            time.sleep(RETRY_DELAY)  # Wait before retrying
+
 @app.post("/upload")
 async def upload_file(file: UploadFile):
+    file_path = None
     try:
         logger.info(f"Received file: {file.filename}")
+        
+        # Read file content
+        content = await file.read()
+        
+        # Check file size
+        if len(content) > MAX_FILE_SIZE:
+            raise HTTPException(
+                status_code=413,
+                detail=f"File too large. Maximum size is {MAX_FILE_SIZE/1024/1024}MB"
+            )
         
         # Save the uploaded file temporarily
         file_path = f"temp_{file.filename}"
         with open(file_path, "wb") as buffer:
-            content = await file.read()
             buffer.write(content)
         logger.info(f"File saved temporarily as: {file_path}")
 
@@ -58,21 +87,10 @@ async def upload_file(file: UploadFile):
         )
         logger.info("Transcription config created")
 
-        # Create the transcriber
-        transcriber = aai.Transcriber()
-        logger.info("Transcriber created")
-
-        # Start the transcription
+        # Start the transcription with retry logic
         logger.info("Starting transcription...")
-        transcript = transcriber.transcribe(
-            file_path,
-            config=config
-        )
+        transcript = transcribe_with_retry(file_path, config)
         logger.info("Transcription completed")
-
-        # Clean up the temporary file
-        os.remove(file_path)
-        logger.info("Temporary file cleaned up")
 
         # Format the response
         utterances = []
@@ -93,6 +111,14 @@ async def upload_file(file: UploadFile):
     except Exception as e:
         logger.error(f"Error during transcription: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        # Clean up the temporary file in the finally block
+        if file_path and os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+                logger.info("Temporary file cleaned up")
+            except Exception as e:
+                logger.error(f"Error cleaning up temporary file: {str(e)}")
 
 @app.post("/save-transcript")
 async def save_transcript(transcript: dict):
