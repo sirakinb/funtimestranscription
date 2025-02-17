@@ -29,13 +29,12 @@ function App() {
   const [isSaving, setIsSaving] = useState(false)
   const [editingIndex, setEditingIndex] = useState<number | null>(null)
   const [editedUtterances, setEditedUtterances] = useState<{ [key: number]: string }>({})
-  const [uploadProgress, setUploadProgress] = useState<string>('')
 
   const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
   const uploadWithRetry = async (formData: FormData, retryCount = 0): Promise<TranscriptionResult> => {
     try {
-      setUploadProgress(`Attempt ${retryCount + 1}/${MAX_RETRIES + 1}: Uploading file...`)
+      console.log(`Attempt ${retryCount + 1}/${MAX_RETRIES + 1}: Uploading file...`)
       const response = await fetch(`${API_URL}/upload`, {
         method: 'POST',
         body: formData,
@@ -43,7 +42,8 @@ function App() {
 
       if (!response.ok) {
         const errorText = await response.text()
-        throw new Error(`Server error: ${errorText}`)
+        console.error(`Server response: ${errorText}`)
+        throw new Error('Failed to transcribe audio')
       }
 
       const result = await response.json()
@@ -52,7 +52,7 @@ function App() {
       console.error(`Attempt ${retryCount + 1} failed:`, error)
       
       if (retryCount < MAX_RETRIES) {
-        setUploadProgress(`Retrying in ${RETRY_DELAY/1000} seconds...`)
+        console.log(`Retrying in ${RETRY_DELAY/1000} seconds...`)
         await sleep(RETRY_DELAY)
         return uploadWithRetry(formData, retryCount + 1)
       }
@@ -67,7 +67,7 @@ function App() {
 
     setIsLoading(true)
     setSpeakerNames({})
-    setUploadProgress('Preparing upload...')
+    console.log('Starting upload process...')
     
     const formData = new FormData()
     formData.append('file', file)
@@ -75,11 +75,9 @@ function App() {
     try {
       const result = await uploadWithRetry(formData)
       setTranscription(result)
-      setUploadProgress('')
     } catch (error) {
       console.error('Final error:', error)
-      alert(error instanceof Error ? error.message : 'Failed to transcribe audio')
-      setUploadProgress('')
+      alert('Failed to transcribe audio. Please try again.')
     } finally {
       setIsLoading(false)
     }
@@ -187,9 +185,6 @@ function App() {
           <div className="text-center mt-8">
             <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary mx-auto"></div>
             <p className="mt-4">Transcribing your audio...</p>
-            {uploadProgress && (
-              <p className="mt-2 text-sm text-gray-400">{uploadProgress}</p>
-            )}
           </div>
         )}
 
