@@ -3,6 +3,8 @@ import { useDropzone } from 'react-dropzone'
 import { ArrowUpTrayIcon, DocumentTextIcon, ArrowDownTrayIcon, PencilIcon, CheckIcon } from '@heroicons/react/24/outline'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+const MAX_RETRIES = 2
+const RETRY_DELAY = 2000 // 2 seconds
 
 interface Utterance {
   speaker: string
@@ -27,6 +29,37 @@ function App() {
   const [isSaving, setIsSaving] = useState(false)
   const [editingIndex, setEditingIndex] = useState<number | null>(null)
   const [editedUtterances, setEditedUtterances] = useState<{ [key: number]: string }>({})
+  const [uploadProgress, setUploadProgress] = useState<string>('')
+
+  const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+
+  const uploadWithRetry = async (formData: FormData, retryCount = 0): Promise<TranscriptionResult> => {
+    try {
+      setUploadProgress(`Attempt ${retryCount + 1}/${MAX_RETRIES + 1}: Uploading file...`)
+      const response = await fetch(`${API_URL}/upload`, {
+        method: 'POST',
+        body: formData,
+      })
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw new Error(`Server error: ${errorText}`)
+      }
+
+      const result = await response.json()
+      return result
+    } catch (error) {
+      console.error(`Attempt ${retryCount + 1} failed:`, error)
+      
+      if (retryCount < MAX_RETRIES) {
+        setUploadProgress(`Retrying in ${RETRY_DELAY/1000} seconds...`)
+        await sleep(RETRY_DELAY)
+        return uploadWithRetry(formData, retryCount + 1)
+      }
+      
+      throw error
+    }
+  }
 
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
     const file = acceptedFiles[0]
@@ -34,24 +67,19 @@ function App() {
 
     setIsLoading(true)
     setSpeakerNames({})
+    setUploadProgress('Preparing upload...')
+    
     const formData = new FormData()
     formData.append('file', file)
 
     try {
-      const response = await fetch(`${API_URL}/upload`, {
-        method: 'POST',
-        body: formData,
-      })
-
-      if (!response.ok) {
-        throw new Error('Transcription failed')
-      }
-
-      const result = await response.json()
+      const result = await uploadWithRetry(formData)
       setTranscription(result)
+      setUploadProgress('')
     } catch (error) {
-      console.error('Error:', error)
-      alert('Failed to transcribe audio')
+      console.error('Final error:', error)
+      alert(error instanceof Error ? error.message : 'Failed to transcribe audio')
+      setUploadProgress('')
     } finally {
       setIsLoading(false)
     }
@@ -159,6 +187,9 @@ function App() {
           <div className="text-center mt-8">
             <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary mx-auto"></div>
             <p className="mt-4">Transcribing your audio...</p>
+            {uploadProgress && (
+              <p className="mt-2 text-sm text-gray-400">{uploadProgress}</p>
+            )}
           </div>
         )}
 
