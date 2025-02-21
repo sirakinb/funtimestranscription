@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react'
 import { useDropzone } from 'react-dropzone'
-import { ArrowUpTrayIcon, DocumentTextIcon, ArrowDownTrayIcon, PencilIcon, CheckIcon } from '@heroicons/react/24/outline'
+import { ArrowUpTrayIcon, DocumentTextIcon, ArrowDownTrayIcon, PencilIcon, CheckIcon, XMarkIcon } from '@heroicons/react/24/outline'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 const MAX_RETRIES = 2
@@ -29,6 +29,7 @@ function App() {
   const [isSaving, setIsSaving] = useState(false)
   const [editingIndex, setEditingIndex] = useState<number | null>(null)
   const [editedUtterances, setEditedUtterances] = useState<{ [key: number]: string }>({})
+  const [deletedUtterances, setDeletedUtterances] = useState<Set<number>>(new Set())
 
   const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
@@ -96,7 +97,11 @@ function App() {
     if (!transcription) return
 
     const text = transcription.utterances
-      .map((u, index) => `[${speakerNames[u.speaker] || u.speaker}]: ${editedUtterances[index] || u.text}`)
+      .map((u, index) => {
+        if (deletedUtterances.has(index)) return null;
+        return `[${speakerNames[u.speaker] || u.speaker}]: ${editedUtterances[index] || u.text}`;
+      })
+      .filter(line => line !== null)
       .join('\n\n')
     
     const blob = new Blob([text], { type: 'text/plain' })
@@ -117,17 +122,37 @@ function App() {
     }))
   }
 
+  const handleDeleteUtterance = (index: number) => {
+    if (window.confirm('Are you sure you want to delete this segment?')) {
+      setDeletedUtterances(prev => {
+        const newSet = new Set(prev)
+        newSet.add(index)
+        return newSet
+      })
+    }
+  }
+
+  const handleRestoreUtterance = (index: number) => {
+    setDeletedUtterances(prev => {
+      const newSet = new Set(prev)
+      newSet.delete(index)
+      return newSet
+    })
+  }
+
   const saveToMake = async () => {
     if (!transcription) return
     setIsSaving(true)
 
     const formattedTranscript = {
       text: transcription.text,
-      utterances: transcription.utterances.map((u, index) => ({
-        ...u,
-        speaker: speakerNames[u.speaker] || u.speaker,
-        text: editedUtterances[index] || u.text
-      }))
+      utterances: transcription.utterances
+        .filter((_, index) => !deletedUtterances.has(index))
+        .map((u, index) => ({
+          ...u,
+          speaker: speakerNames[u.speaker] || u.speaker,
+          text: editedUtterances[index] || u.text
+        }))
     }
 
     try {
@@ -233,35 +258,46 @@ function App() {
 
             <div className="space-y-4">
               {transcription.utterances.map((utterance, index) => (
-                <div
-                  key={index}
-                  className="p-4 rounded-lg bg-dark-100"
-                >
-                  <div className="flex justify-between items-start mb-2">
-                    <div className="font-semibold text-primary">
-                      {speakerNames[utterance.speaker] || utterance.speaker}
+                !deletedUtterances.has(index) && (
+                  <div
+                    key={index}
+                    className="p-4 rounded-lg bg-dark-100"
+                  >
+                    <div className="flex justify-between items-start mb-2">
+                      <div className="font-semibold text-primary">
+                        {speakerNames[utterance.speaker] || utterance.speaker}
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => editingIndex === index ? setEditingIndex(null) : setEditingIndex(index)}
+                          className="p-1 hover:bg-dark-200 rounded-full transition-colors"
+                        >
+                          {editingIndex === index ? (
+                            <CheckIcon className="w-5 h-5 text-green-500" />
+                          ) : (
+                            <PencilIcon className="w-5 h-5 text-gray-400" />
+                          )}
+                        </button>
+                        <button
+                          onClick={() => handleDeleteUtterance(index)}
+                          className="p-1 hover:bg-dark-200 rounded-full transition-colors"
+                          title="Delete"
+                        >
+                          <XMarkIcon className="w-5 h-5 text-gray-400" />
+                        </button>
+                      </div>
                     </div>
-                    <button
-                      onClick={() => editingIndex === index ? setEditingIndex(null) : setEditingIndex(index)}
-                      className="p-1 hover:bg-dark-200 rounded-full transition-colors"
-                    >
-                      {editingIndex === index ? (
-                        <CheckIcon className="w-5 h-5 text-green-500" />
-                      ) : (
-                        <PencilIcon className="w-5 h-5 text-gray-400" />
-                      )}
-                    </button>
+                    {editingIndex === index ? (
+                      <textarea
+                        value={editedUtterances[index] || utterance.text}
+                        onChange={(e) => handleEditText(index, e.target.value)}
+                        className="w-full px-3 py-2 rounded bg-dark-200 border border-gray-600 focus:border-primary focus:outline-none min-h-[100px]"
+                      />
+                    ) : (
+                      <div>{editedUtterances[index] || utterance.text}</div>
+                    )}
                   </div>
-                  {editingIndex === index ? (
-                    <textarea
-                      value={editedUtterances[index] || utterance.text}
-                      onChange={(e) => handleEditText(index, e.target.value)}
-                      className="w-full px-3 py-2 rounded bg-dark-200 border border-gray-600 focus:border-primary focus:outline-none min-h-[100px]"
-                    />
-                  ) : (
-                    <div>{editedUtterances[index] || utterance.text}</div>
-                  )}
-                </div>
+                )
               ))}
             </div>
           </div>
