@@ -132,14 +132,6 @@ function App() {
     }
   }
 
-  const handleRestoreUtterance = (index: number) => {
-    setDeletedUtterances(prev => {
-      const newSet = new Set(prev)
-      newSet.delete(index)
-      return newSet
-    })
-  }
-
   const saveToMake = async () => {
     if (!transcription) return
     setIsSaving(true)
